@@ -331,6 +331,7 @@ export type Database = {
           tags: string[]
           thumbnail_url: string | null
           ticket_link: string | null
+          updated_at: string | null
           venue_name: string | null
           video_url: string | null
         }
@@ -362,6 +363,7 @@ export type Database = {
           tags: string[]
           thumbnail_url?: string | null
           ticket_link?: string | null
+          updated_at?: string | null
           venue_name?: string | null
           video_url?: string | null
         }
@@ -393,6 +395,7 @@ export type Database = {
           tags?: string[]
           thumbnail_url?: string | null
           ticket_link?: string | null
+          updated_at?: string | null
           venue_name?: string | null
           video_url?: string | null
         }
