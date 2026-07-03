@@ -4,11 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --loader ts-node/esm src/seed_types_tags.ts",
+    "dev": "SEED_ENV=dev tsx src/seed_types_tags.ts",
+    "prod": "SEED_ENV=prod tsx src/seed_types_tags.ts",
+    "seed_categories:dev": "SEED_ENV=dev tsx src/seed_categories.ts",
+    "seed_categories:prod": "SEED_ENV=prod tsx src/seed_categories.ts",
     "build": "tsc",
     "seed_types": "node dist/seed_types_tags.js",
-    "seed_what_else": "node dist/seed_what_else_types_tags.js",
-    "gen:types": "supabase gen types typescript --linked --schema public,storage,graphql_public > src/database/types.ts"
+    "gen:types:dev": "supabase gen types typescript --project-id wsbacfyffzctiiqlnhkq --schema public,storage,graphql_public > src/database/types.ts",
+    "gen:types:prod": "supabase gen types typescript --project-id xoqohyzwzbdxfyhwcbdd --schema public,storage,graphql_public > src/database/types.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -17,7 +20,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.22.4",
     "typescript": "^5.0.0"
   }
 }
-

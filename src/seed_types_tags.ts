@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import { config } from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
 // @ts-ignore
 import { Database } from './database/types'
@@ -6,14 +6,22 @@ import {
     SeedType, EVENT_SEED_TYPES_TAGS, BUSINESS_SEED_TYPES_AND_TAGS, RESOURCE_SEED_TYPES_AND_TAGS,
 } from "./seeds.js";
 
-const supabase = createClient<Database>(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_ANON_KEY!
-)
-
 const SEED: SeedType[] = [...EVENT_SEED_TYPES_TAGS, ...BUSINESS_SEED_TYPES_AND_TAGS, ...RESOURCE_SEED_TYPES_AND_TAGS]
 
 async function seed() {
+    const envPath = process.env.SEED_ENV === 'dev' ? '.env.dev' : '.env'
+    const result = config({ path: envPath })
+    console.log('SEED_ENV:', process.env.SEED_ENV)
+    console.log('Loading env file:', envPath)
+    console.log('dotenv error:', result.error ?? 'none')
+    console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? 'set' : 'MISSING')
+    console.log('SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'set' : 'MISSING')
+
+    const supabase = createClient<Database>(
+        process.env.SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
     // 1) Insert all types
     const typeRows: Database['public']['Tables']['types']['Insert'][] = SEED.map((t) => ({
         id: t.id,
