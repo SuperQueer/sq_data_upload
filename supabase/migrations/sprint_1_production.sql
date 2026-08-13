@@ -292,19 +292,19 @@ ALTER TABLE bulk_upload_events_drafts ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can read own event drafts"
   ON bulk_upload_events_drafts FOR SELECT
-  USING (admin_user_id = auth.uid()::text);
+  USING (admin_user_id::text = auth.uid()::text);
 
 CREATE POLICY "Users can insert own event drafts"
   ON bulk_upload_events_drafts FOR INSERT
-  WITH CHECK (admin_user_id = auth.uid()::text);
+  WITH CHECK (admin_user_id::text = auth.uid()::text);
 
 CREATE POLICY "Users can update own event drafts"
   ON bulk_upload_events_drafts FOR UPDATE
-  USING (admin_user_id = auth.uid()::text);
+  USING (admin_user_id::text = auth.uid()::text);
 
 CREATE POLICY "Users can delete own event drafts"
   ON bulk_upload_events_drafts FOR DELETE
-  USING (admin_user_id = auth.uid()::text);
+  USING (admin_user_id::text = auth.uid()::text);
 
 ALTER TABLE prides
   ADD COLUMN IF NOT EXISTS is_draft BOOLEAN NOT NULL DEFAULT FALSE;
