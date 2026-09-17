@@ -2,27 +2,15 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const FCM_SA_JSON = Deno.env.get('FCM_SERVICE_ACCOUNT_JSON')!
+// Matches the secret name actually set on the project (`supabase secrets list`);
+// an earlier version of this file used FCM_SERVICE_ACCOUNT_JSON, which was
+// never set, so JSON.parse(undefined) failed at runtime.
+const FCM_SA_JSON = Deno.env.get('FIREBASE_SERVICE_ACCOUNT_KEY')!
 
 interface ServiceAccount {
   project_id: string
   client_email: string
   private_key: string
-}
-
-const NOTIFICATION_COPY: Record<string, { title: string; body: (name: string, type: string) => string }> = {
-  approved: {
-    title: '🎉 Content Approved!',
-    body: (name, type) => `Your ${type} "${name}" is now live.`,
-  },
-  rejected: {
-    title: 'Submission Needs Revisions',
-    body: (name, type) => `Your ${type} "${name}" needs some changes before it can go live.`,
-  },
-  cancelled: {
-    title: 'Content Cancelled',
-    body: (name, type) => `Your ${type} "${name}" has been cancelled.`,
-  },
 }
 
 async function getAccessToken(sa: ServiceAccount): Promise<string> {
@@ -79,45 +67,38 @@ async function getAccessToken(sa: ServiceAccount): Promise<string> {
 
 Deno.serve(async (req) => {
   try {
-    const { contentId, contentType, status } = await req.json()
+    const body = await req.json()
+    console.log('[NOTIF][Edge] Received payload:', JSON.stringify(body))
 
-    if (!contentId || !contentType || !status) {
-      return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 })
-    }
+    // notify_user_on_approval (and notify_admins_on_submission) always POST
+    // { recipient_id, title, message } — this is the shape every trigger in
+    // both Dev and Prod sends, so it's the contract this function must match.
+    const { recipient_id, title, message } = body
 
-    const copy = NOTIFICATION_COPY[status]
-    if (!copy) {
-      return new Response(JSON.stringify({ sent: false, reason: 'unknown_status' }), { status: 200 })
+    if (!recipient_id || !title || !message) {
+      console.error(
+        `[NOTIF][Edge] Missing required fields: recipient_id=${recipient_id} title=${title} message=${message} — raw payload=${JSON.stringify(body)}`,
+      )
+      return new Response(
+        JSON.stringify({ error: 'Missing required fields: recipient_id, title, message' }),
+        { status: 400 },
+      )
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    // Fetch content to get owner_id and display name
-    const table = contentType === 'event' ? 'events' : 'locations'
-    const nameCol = contentType === 'event' ? 'event_name' : 'name'
-
-    const { data: content } = await supabase
-      .from(table)
-      .select(`owner_id, ${nameCol}`)
-      .eq('id', contentId)
-      .maybeSingle()
-
-    if (!content?.owner_id) {
-      return new Response(JSON.stringify({ sent: false, reason: 'no_owner' }), { status: 200 })
-    }
-
-    const contentName = (content[nameCol] as string | null) ?? contentType
-
-    // Look up the owner's FCM token
+    // Look up the recipient's FCM token
     const { data: tokenRow } = await supabase
       .from('user_fcm_tokens')
       .select('token')
-      .eq('user_id', content.owner_id)
+      .eq('user_id', recipient_id)
       .maybeSingle()
 
     if (!tokenRow?.token) {
+      console.warn(`[NOTIF][Edge] No FCM token registered for recipient_id=${recipient_id} — skipping push`)
       return new Response(JSON.stringify({ sent: false, reason: 'no_fcm_token' }), { status: 200 })
     }
+    console.log(`[NOTIF][Edge] Found FCM token for recipient_id=${recipient_id}, sending push...`)
 
     // Get FCM access token and send push
     const sa: ServiceAccount = JSON.parse(FCM_SA_JSON)
@@ -134,20 +115,37 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           message: {
             token: tokenRow.token,
-            notification: {
-              title: copy.title,
-              body: copy.body(contentName, contentType),
+            notification: { title, body: message },
+            android: { priority: 'high' },
+            apns: {
+              payload: { aps: { alert: { title, body: message }, sound: 'default' } },
             },
-            data: { contentId, contentType, status },
           },
         }),
       },
     )
 
     const fcmData = await fcmRes.json()
-    return new Response(JSON.stringify({ sent: fcmRes.ok, fcm: fcmData }), { status: 200 })
+
+    if (!fcmRes.ok) {
+      console.error(`[NOTIF][Edge] FCM send failed for recipient_id=${recipient_id}: ${JSON.stringify(fcmData)}`)
+
+      // Token is stale — clean it up so future calls don't waste a round-trip.
+      const isUnregistered = fcmData.error?.details?.some(
+        (d: { errorCode?: string }) => d.errorCode === 'UNREGISTERED',
+      )
+      if (isUnregistered) {
+        await supabase.from('user_fcm_tokens').delete().eq('user_id', recipient_id)
+        console.warn(`[NOTIF][Edge] Removed stale FCM token for recipient_id=${recipient_id}`)
+      }
+
+      return new Response(JSON.stringify({ sent: false, fcm: fcmData }), { status: 500 })
+    }
+
+    console.log(`[NOTIF][Edge] Push sent successfully to recipient_id=${recipient_id}: ${JSON.stringify(fcmData)}`)
+    return new Response(JSON.stringify({ sent: true, fcm: fcmData }), { status: 200 })
   } catch (e) {
-    console.error('[send-push-notification]', e)
+    console.error('[NOTIF][Edge] Unexpected error:', e)
     return new Response(JSON.stringify({ error: String(e) }), { status: 500 })
   }
 })
